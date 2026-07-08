@@ -1,3 +1,9 @@
+## 0.5.2
+
+- Add `Icon` support for Linux desktop autostart file (leanflutter/launch_at_startup#40)
+- Fix some registry issues on Windows (leanflutter/launch_at_startup#41, leanflutter/launch_at_startup#42, leanflutter/launch_at_startup#43)
+- Update plugin to use win32_registry version 3.0.3 (leanflutter/launch_at_startup#41)
+
 ## 0.5.1
 
 - MSIX support args #37
