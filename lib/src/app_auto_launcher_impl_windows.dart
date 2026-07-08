@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:launch_at_startup/src/app_auto_launcher.dart';
+import 'package:win32/win32.dart'
+    show ERROR_FILE_NOT_FOUND, HRESULT_FROM_WIN32, WindowsException;
 import 'package:win32_registry/win32_registry.dart'
     if (dart.library.html) 'noop.dart';
 
@@ -23,13 +25,19 @@ class AppAutoLauncherImplWindows extends AppAutoLauncher {
 
   late String _registryValue;
 
+  static const String _runRegistryPath =
+      r'Software\Microsoft\Windows\CurrentVersion\Run';
+
+  static const String _startupApprovedRegistryPath =
+      r'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run';
+
   RegistryKey get _regKey => CURRENT_USER.open(
-    r'Software\Microsoft\Windows\CurrentVersion\Run',
+    _runRegistryPath,
     config: const RegistryOpenConfig(access: RegistryAccess.all),
   );
 
   RegistryKey get _startupApprovedRegKey => CURRENT_USER.open(
-    r'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run',
+    _startupApprovedRegistryPath,
     config: const RegistryOpenConfig(access: RegistryAccess.all),
   );
 
@@ -37,26 +45,44 @@ class AppAutoLauncherImplWindows extends AppAutoLauncher {
 
   @override
   Future<bool> isEnabled() async {
-    String? value = _regKey.getString(appName);
+    final String? value;
+    try {
+      value = _regKey.getString(appName);
+    } on WindowsException catch (e) {
+      // The Run key may not exist yet on a fresh Windows install where no
+      // application has registered for startup, which means auto-start is
+      // not enabled. Rethrow anything else (for example access denied) so a
+      // genuine failure is not silently masked.
+      if (e.hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) rethrow;
+      return false;
+    }
 
     return value == _registryValue && await _isStartupApproved();
   }
 
   @override
   Future<bool> enable() async {
-    _regKey.setValue(
+    // openPath (used on the read path) throws when a key does not exist, and
+    // createValue only writes to an already-open handle. On a fresh install
+    // the Run and StartupApproved\Run keys may not exist yet, so create them
+    // first. createKey creates any missing keys along the path and opens an
+    // existing key unchanged.
+    final regKey = CURRENT_USER.create(_runRegistryPath);
+    regKey.setValue(
       appName,
-      RegistryValue.string(_registryValue),
+      RegistryValue.string(
+        _registryValue,
+      ),
     );
 
     final bytes = Uint8List(_startupApprovedRegKeyBytesLength);
     // "2" as a first byte in this register means that the autostart is enabled
     bytes[0] = 2;
 
-    _startupApprovedRegKey.setValue(
-      appName,
-      RegistryValue.binary(bytes),
+    final startupApprovedRegKey = CURRENT_USER.create(
+      _startupApprovedRegistryPath,
     );
+    startupApprovedRegKey.setValue(appName, RegistryValue.binary(bytes));
 
     return true;
   }
@@ -72,7 +98,16 @@ class AppAutoLauncherImplWindows extends AppAutoLauncher {
   // Odd first byte will prevent the app from autostarting
   // Empty or any other value will allow the app to autostart
   Future<bool> _isStartupApproved() async {
-    final value = _startupApprovedRegKey.getBinary(appName);
+    Uint8List? value;
+    try {
+      value = _startupApprovedRegKey.getBinary(appName);
+    } on WindowsException catch (e) {
+      // The StartupApproved\Run key is created lazily and is often absent on
+      // a fresh install; a missing key is treated as approved by the null
+      // check below. Rethrow anything else so a genuine failure surfaces.
+      if (e.hr != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) rethrow;
+      value = null;
+    }
 
     if (value == null) {
       return true;
