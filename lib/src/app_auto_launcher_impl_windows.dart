@@ -32,14 +32,14 @@ class AppAutoLauncherImplWindows extends AppAutoLauncher {
       r'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run';
 
   RegistryKey get _regKey => CURRENT_USER.open(
-    _runRegistryPath,
-    config: const RegistryOpenConfig(access: RegistryAccess.all),
-  );
+        _runRegistryPath,
+        config: const RegistryOpenConfig(access: RegistryAccess.all),
+      );
 
   RegistryKey get _startupApprovedRegKey => CURRENT_USER.open(
-    _startupApprovedRegistryPath,
-    config: const RegistryOpenConfig(access: RegistryAccess.all),
-  );
+        _startupApprovedRegistryPath,
+        config: const RegistryOpenConfig(access: RegistryAccess.all),
+      );
 
   static const int _startupApprovedRegKeyBytesLength = 12;
 
